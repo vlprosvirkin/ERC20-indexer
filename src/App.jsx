@@ -1,4 +1,7 @@
 import {
+  Alert,
+  AlertDescription,
+  AlertIcon,
   Box,
   Button,
   Center,
@@ -7,25 +10,84 @@ import {
   Image,
   Input,
   SimpleGrid,
+  Stack,
   Text,
+  Tag,
 } from '@chakra-ui/react';
 import { Alchemy, Network, Utils } from 'alchemy-sdk';
-import { useState } from 'react';
+import { ethers } from 'ethers';
+import { useEffect, useState } from 'react';
+
+const provider = new ethers.providers.Web3Provider(window.ethereum);
+
+const config = {
+  apiKey: 'r_dJr7k5xMuk8bMvg9UWtjYT6LQXrU3M',
+  network: Network.ETH_MAINNET,
+};
+
+const alchemy = new Alchemy(config);
 
 function App() {
   const [userAddress, setUserAddress] = useState('');
   const [results, setResults] = useState([]);
   const [hasQueried, setHasQueried] = useState(false);
   const [tokenDataObjects, setTokenDataObjects] = useState([]);
+  const [account, setAccount] = useState();
 
-  async function getTokenBalance() {
-    const config = {
-      apiKey: '<-- COPY-PASTE YOUR ALCHEMY API KEY HERE -->',
-      network: Network.ETH_MAINNET,
-    };
+  async function connectWallet() {
+    if(!window.ethereum){
+      alert("MetaMask is not installed!")
+    } 
 
-    const alchemy = new Alchemy(config);
-    const data = await alchemy.core.getTokenBalances(userAddress);
+    const accounts = await provider.send('eth_requestAccounts', []);
+    setAccount(accounts[0]);
+    document.getElementById("inputAddress").value = accounts[0];
+    setUserAddress(accounts[0]);
+  }
+  /*
+  useEffect(() => {
+    async function getAccounts() {
+      const accounts = await provider.send('eth_requestAccounts', []);
+
+      setAccount(accounts[0]);
+      setSigner(provider.getSigner());
+    }
+
+    getAccounts();
+  }, [account]);
+  */
+
+  useEffect(() => {
+    window.ethereum.on('accountsChanged', async function (accounts) {
+      // accounts[0] is the new selected account in MetaMask
+      setAccount(accounts[0]);
+      document.getElementById("inputAddress").value = accounts[0];
+      setUserAddress(accounts[0]);
+    });
+  }, []);
+
+  async function checkInput() {
+    let addr = document.getElementById('inputAddress').value;
+    const isENS = await alchemy.core.resolveName(addr);
+    console.log(isENS);
+    if (isENS != null) {
+      addr = isENS;
+    }
+    try {
+      console.log(addr);
+      ethers.utils.getAddress(addr); // This will throw an error if the address is invalid
+      setUserAddress(addr);
+      await getTokenBalance(addr);
+    } catch (error) {
+      alert("Please type a valid address!");
+    }
+  }
+
+  async function getTokenBalance(address) {
+
+    console.log(userAddress);
+
+    const data = await alchemy.core.getTokenBalances(address);
 
     setResults(data);
 
@@ -43,7 +105,17 @@ function App() {
   }
   return (
     <Box w="100vw">
-      <Center>
+      <Stack align="end" m={5}>
+        {!account ? (
+        <Button variant="outline" onClick={connectWallet} size="sm" colorScheme="teal">
+          Connect Wallet
+        </Button>) : (
+        <Tag size="sm" colorScheme="teal">
+          Connected
+        </Tag>
+        )}
+      </Stack>
+      <Center m={10}>
         <Flex
           alignItems={'center'}
           justifyContent="center"
@@ -68,6 +140,7 @@ function App() {
           Get all the ERC-20 token balances of this address:
         </Heading>
         <Input
+          id="inputAddress"
           onChange={(e) => setUserAddress(e.target.value)}
           color="black"
           w="600px"
@@ -76,13 +149,23 @@ function App() {
           bgColor="white"
           fontSize={24}
         />
-        <Button fontSize={20} onClick={getTokenBalance} mt={36} bgColor="blue">
+        <Button fontSize={20} onClick={checkInput} mt={36} bgColor="blue">
           Check ERC-20 Token Balances
         </Button>
 
         <Heading my={36}>ERC-20 token balances:</Heading>
 
         {hasQueried ? (
+          <div>
+          {
+            !tokenDataObjects ? (
+            <Alert status='info'>
+                  <AlertIcon />
+                  <AlertDescription>
+                    Tokens are loading...
+                  </AlertDescription>
+                </Alert>
+          ) : (
           <SimpleGrid w={'90vw'} columns={4} spacing={24}>
             {results.tokenBalances.map((e, i) => {
               return (
@@ -108,6 +191,9 @@ function App() {
               );
             })}
           </SimpleGrid>
+          )
+          }
+</div>
         ) : (
           'Please make a query! This may take a few seconds...'
         )}
